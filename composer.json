@@ -8,7 +8,7 @@
     "require": {
         "php": ">=5.5",
         "google/auth": "~0.9|^1.0",
-        "grpc/grpc": "^1.4",
+        "grpc/grpc": "*",
         "google/protobuf": "^3.4"
     },
     "require-dev": {
