@@ -35,6 +35,9 @@ namespace Google\ApiCore;
 use Google\ApiCore\LongRunning\OperationsClient;
 use Google\ApiCore\Middleware\AgentHeaderMiddleware;
 use Google\ApiCore\Middleware\AuthWrapperMiddleware;
+use Google\ApiCore\Middleware\MetadataMiddleware;
+use Google\ApiCore\Middleware\OperationsCallMiddleware;
+use Google\ApiCore\Middleware\PagedCallMiddleware;
 use Google\ApiCore\Middleware\RetryMiddleware;
 use Google\ApiCore\Transport\GrpcTransport;
 use Google\ApiCore\Transport\RestTransport;
@@ -302,47 +305,9 @@ trait GapicClientTrait
         $callType = Call::UNARY_CALL,
         $interfaceName = null
     ) {
-        list($call, $callStack, $callOptions) = $this->buildCall(
-            $methodName,
-            $decodeType,
-            $optionalArgs,
-            $request,
-            $callType,
-            $interfaceName
-        );
-        return $callStack($call, $callOptions);
-    }
-
-    /**
-     * @param string $methodName
-     * @param string $decodeType
-     * @param array $optionalArgs {
-     *     Call Options
-     *
-     *     @type array $headers [optional] key-value array containing headers
-     *     @type int $timeoutMillis [optional] the timeout in milliseconds for the call
-     *     @type array $transportOptions [optional] transport-specific call options
-     *     @type RetrySettings $retrySettings [optional] A retry settings override
-     *           For the call.
-     * }
-     * @param Message $request
-     * @param int $callType
-     * @param string $interfaceName
-     *
-     * @return array Call elements
-     */
-    protected function buildCall(
-        $methodName,
-        $decodeType,
-        array $optionalArgs = [],
-        Message $request = null,
-        $callType = Call::UNARY_CALL,
-        $interfaceName = null
-    ) {
         $callStack = $this->createCallStack(
             $this->configureCallConstructionOptions($methodName, $optionalArgs)
         );
-
         $descriptor = isset($this->descriptors[$methodName]['grpcStreaming'])
             ? $this->descriptors[$methodName]['grpcStreaming']
             : null;
@@ -354,7 +319,63 @@ trait GapicClientTrait
             $descriptor,
             $callType
         );
-        return [$call, $callStack, $this->configureCallOptions($optionalArgs)];
+        switch ($callType) {
+            case Call::UNARY_CALL:
+                return $this->startUnaryCall($callStack, $call, $optionalArgs);
+            case Call::BIDI_STREAMING_CALL:
+            case Call::CLIENT_STREAMING_CALL:
+            case Call::SERVER_STREAMING_CALL:
+                return $this->startStreamingCall($callStack, $call, $optionalArgs);
+        }
+    }
+
+    /**
+     * @param callable $callStack
+     * @param Call $call
+     * @param array $optionalArgs {
+     *     Call Options
+     *
+     *     @type array $headers [optional] key-value array containing headers
+     *     @type int $timeoutMillis [optional] the timeout in milliseconds for the call
+     *     @type array $transportOptions [optional] transport-specific call options
+     *     @type RetrySettings $retrySettings [optional] A retry settings override
+     *           For the call.
+     * }
+     *
+     * @return PromiseInterface
+     */
+    protected function startUnaryCall(
+        $callStack,
+        $call,
+        array $optionalArgs
+    ) {
+        if (isset($optionalArgs['withMetadata']) && $optionalArgs['withMetadata']) {
+            $callStack = new MetadataMiddleware($callStack);
+        }
+        return $callStack($call, $optionalArgs);
+    }
+
+    /**
+     * @param callable $callStack
+     * @param Call $call
+     * @param array $optionalArgs {
+     *     Call Options
+     *
+     *     @type array $headers [optional] key-value array containing headers
+     *     @type int $timeoutMillis [optional] the timeout in milliseconds for the call
+     *     @type array $transportOptions [optional] transport-specific call options
+     *     @type RetrySettings $retrySettings [optional] A retry settings override
+     *           For the call.
+     * }
+     *
+     * @return BidiStream|ClientStream|ServerStream
+     */
+    protected function startStreamingCall(
+        $callStack,
+        $call,
+        array $optionalArgs
+    ) {
+        return $callStack($call, $optionalArgs);
     }
 
     /**
@@ -369,7 +390,7 @@ trait GapicClientTrait
      */
     protected function createCallStack(array $callConstructionOptions)
     {
-        return new RetryMiddleware(
+        $callStack = new RetryMiddleware(
             new AgentHeaderMiddleware(
                 new AuthWrapperMiddleware(
                     function (Call $call, array $options) {
@@ -382,6 +403,15 @@ trait GapicClientTrait
             ),
             $callConstructionOptions['retrySettings']
         );
+
+        if (isset($callConstructionOptions['pageStreaming'])) {
+            $callStack = new PagedCallMiddleware(
+                $callStack,
+                new PageStreamingDescriptor($callConstructionOptions['pageStreaming'])
+            );
+        }
+
+        return $callStack;
     }
 
     /**
@@ -451,21 +481,21 @@ trait GapicClientTrait
         OperationsClient $client,
         $interfaceName = null
     ) {
+        $callStack = $this->createCallStack(
+            $this->configureCallConstructionOptions($methodName, $optionalArgs)
+        );
         $descriptor = $this->descriptors[$methodName]['longRunning'];
-        return $this->startCall(
-            $methodName,
-            Operation::class,
-            $optionalArgs,
-            $request,
-            Call::UNARY_CALL,
-            $interfaceName
-        )->then(function (Message $response) use ($client, $descriptor) {
-            $options = $descriptor + [
-                'lastProtoResponse' => $response
-            ];
+        $callStack = new OperationsCallMiddleware($callStack, $client, $descriptor);
 
-            return new OperationResponse($response->getName(), $client, $options);
-        });
+        $call = new Call(
+            $this->buildMethod($interfaceName, $methodName),
+            Operation::class,
+            $request,
+            [],
+            Call::UNARY_CALL
+        );
+
+        return $this->startUnaryCall($callStack, $call, $optionalArgs);
     }
 
     /**
@@ -484,28 +514,22 @@ trait GapicClientTrait
         Message $request,
         $interfaceName = null
     ) {
-        list($call, $callStack, $callOptions) = $this->buildCall(
-            $methodName,
+        $callStack = $this->createCallStack(
+            $this->configureCallConstructionOptions($methodName, $optionalArgs)
+        );
+        $descriptor = new PageStreamingDescriptor(
+            $this->descriptors[$methodName]['pageStreaming']
+        );
+        $callStack = new PagedCallMiddleware($callStack, $descriptor);
+
+        $call = new Call(
+            $this->buildMethod($interfaceName, $methodName),
             $decodeType,
-            $optionalArgs,
             $request,
-            Call::UNARY_CALL,
-            $interfaceName
+            [],
+            Call::UNARY_CALL
         );
-        return $callStack($call, $callOptions)->then(
-            function (Message $response) use ($call, $callStack, $callOptions, $methodName) {
-                $page = new Page(
-                    $call,
-                    $callOptions,
-                    $callStack,
-                    new PageStreamingDescriptor(
-                        $this->descriptors[$methodName]['pageStreaming']
-                    ),
-                    $response
-                );
-                return new PagedListResponse($page);
-            }
-        );
+        return $this->startUnaryCall($callStack, $call, $optionalArgs)->wait();
     }
 
     /**
