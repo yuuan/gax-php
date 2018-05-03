@@ -302,6 +302,43 @@ trait GapicClientTrait
         $callType = Call::UNARY_CALL,
         $interfaceName = null
     ) {
+        list($call, $callStack, $callOptions) = $this->buildCall(
+            $methodName,
+            $decodeType,
+            $optionalArgs,
+            $request,
+            $callType,
+            $interfaceName
+        );
+        return $callStack($call, $callOptions);
+    }
+
+    /**
+     * @param string $methodName
+     * @param string $decodeType
+     * @param array $optionalArgs {
+     *     Call Options
+     *
+     *     @type array $headers [optional] key-value array containing headers
+     *     @type int $timeoutMillis [optional] the timeout in milliseconds for the call
+     *     @type array $transportOptions [optional] transport-specific call options
+     *     @type RetrySettings $retrySettings [optional] A retry settings override
+     *           For the call.
+     * }
+     * @param Message $request
+     * @param int $callType
+     * @param string $interfaceName
+     *
+     * @return array Call elements
+     */
+    protected function buildCall(
+        $methodName,
+        $decodeType,
+        array $optionalArgs = [],
+        Message $request = null,
+        $callType = Call::UNARY_CALL,
+        $interfaceName = null
+    ) {
         $callStack = $this->createCallStack(
             $this->configureCallConstructionOptions($methodName, $optionalArgs)
         );
@@ -317,10 +354,7 @@ trait GapicClientTrait
             $descriptor,
             $callType
         );
-        return $callStack(
-            $call,
-            $this->configureCallOptions($optionalArgs)
-        );
+        return [$call, $callStack, $this->configureCallOptions($optionalArgs)];
     }
 
     /**
@@ -450,20 +484,27 @@ trait GapicClientTrait
         Message $request,
         $interfaceName = null
     ) {
-        $call = new Call(
-            $this->buildMethod($interfaceName, $methodName),
+        list($call, $callStack, $callOptions) = $this->buildCall(
+            $methodName,
             $decodeType,
-            $request
+            $optionalArgs,
+            $request,
+            Call::UNARY_CALL,
+            $interfaceName
         );
-        return new PagedListResponse(
-            $call,
-            $this->configureCallOptions($optionalArgs),
-            $this->createCallStack(
-                $this->configureCallConstructionOptions($methodName, $optionalArgs)
-            ),
-            new PageStreamingDescriptor(
-                $this->descriptors[$methodName]['pageStreaming']
-            )
+        return $callStack($call, $callOptions)->then(
+            function (Message $response) use ($call, $callStack, $callOptions, $methodName) {
+                $page = new Page(
+                    $call,
+                    $callOptions,
+                    $callStack,
+                    new PageStreamingDescriptor(
+                        $this->descriptors[$methodName]['pageStreaming']
+                    ),
+                    $response
+                );
+                return new PagedListResponse($page);
+            }
         );
     }
 
