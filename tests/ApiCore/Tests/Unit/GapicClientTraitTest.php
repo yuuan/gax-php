@@ -98,6 +98,13 @@ class GapicClientTraitTest extends TestCase
         $retrySettings = $this->getMockBuilder(RetrySettings::class)
             ->disableOriginalConstructor()
             ->getMock();
+
+        $longRunningDescriptors = [
+            'longRunning' => [
+                'operationReturnType' => 'operationType',
+                'metadataReturnType' => 'metadataType',
+            ]
+        ];
         $expectedPromise = $this->getMock(PromiseInterface::class);
         $transport = $this->getMock(TransportInterface::class);
         $transport->expects($this->once())
@@ -107,6 +114,7 @@ class GapicClientTraitTest extends TestCase
         $client->set('transport', $transport);
         $client->set('agentHeaderDescriptor', $agentHeaderDescriptor);
         $client->set('retrySettings', ['method' => $retrySettings]);
+        $client->set('descriptors', ['method' => $longRunningDescriptors]);
         $message = new MockRequest();
         $operationsClient = $this->getMockBuilder(OperationsClient::class)
             ->disableOriginalConstructor()
