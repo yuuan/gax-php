@@ -37,8 +37,8 @@ use Google\ApiCore\OperationResponse;
 use Google\Protobuf\Internal\Message;
 
 /**
-* Middleware which wraps the response in an OperationResponse object.
-*/
+ * Middleware which wraps the response in an OperationResponse object.
+ */
 class OperationsCallMiddleware
 {
     /** @var callable */

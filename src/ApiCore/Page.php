@@ -136,7 +136,8 @@ class Page implements IteratorAggregate
         }
         $this->call = $this->call->withMessage($newRequest);
 
-        $response = $this->callable(
+        $callable = $this->callable;
+        $response = $callable(
             $this->call,
             $this->options
         )->wait();
