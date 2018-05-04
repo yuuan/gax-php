@@ -72,12 +72,10 @@ class Page implements IteratorAggregate
         $this->options = $options;
         $this->callable = $callable;
         $this->pageStreamingDescriptor = $pageStreamingDescriptor;
+        $this->response = $response;
 
         $requestPageTokenGetMethod = $this->pageStreamingDescriptor->getRequestPageTokenGetMethod();
         $this->pageToken = $this->call->getMessage()->$requestPageTokenGetMethod();
-
-        // Make API call eagerly
-        $this->response = $response;
     }
 
     /**
