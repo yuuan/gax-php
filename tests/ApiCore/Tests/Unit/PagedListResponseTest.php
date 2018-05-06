@@ -36,6 +36,7 @@ use Google\ApiCore\CallSettings;
 use Google\ApiCore\Page;
 use Google\ApiCore\PagedListResponse;
 use Google\ApiCore\PageStreamingDescriptor;
+use GuzzleHttp\Promise\Promise;
 use PHPUnit\Framework\TestCase;
 
 class PagedListResponseTest extends TestCase
@@ -55,7 +56,7 @@ class PagedListResponseTest extends TestCase
         ]);
 
         $callable = function () use ($mockResponse) {
-            return $promise = new \GuzzleHttp\Promise\Promise(function () use (&$promise, $mockResponse) {
+            return $promise = new Promise(function () use (&$promise, $mockResponse) {
                 $promise->resolve($mockResponse);
             });
         };
