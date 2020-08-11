@@ -240,9 +240,12 @@ class GrpcTransport extends BaseStub implements TransportInterface
             ? $options['transportOptions']['grpcOptions']
             : [];
 
+        $audience = isset($options['audience']) ? $options['audience'] : null;
+
         if (isset($options['credentialsWrapper'])) {
             $credentialsWrapper = $options['credentialsWrapper'];
-            $callOptions['call_credentials_callback'] = $credentialsWrapper->getAuthorizationHeaderCallback();
+            $callOptions['call_credentials_callback'] = $credentialsWrapper
+                ->getAuthorizationHeaderCallback($audience);
         }
 
         if (isset($options['timeoutMillis'])) {

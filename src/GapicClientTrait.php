@@ -75,6 +75,7 @@ trait GapicClientTrait
         Call::CLIENT_STREAMING_CALL => 'startClientStreamingCall',
         Call::SERVER_STREAMING_CALL => 'startServerStreamingCall',
     ];
+    private static $defaultAudience = 'https://' . self::SERVICE_ADDRESS . '/';
 
     /**
      * Initiates an orderly shutdown in which preexisting calls continue but new
@@ -181,6 +182,14 @@ trait GapicClientTrait
         // serviceAddress is now deprecated and acts as an alias for apiEndpoint
         if (isset($options['serviceAddress'])) {
             $options['apiEndpoint'] = $this->pluck('serviceAddress', $options, false);
+        }
+
+        // Use default scopes if an API endpoint is set to ensure the "audience"
+        // does not conflict with the custom endpoint.
+        if (empty($options['credentialsConfig']['scopes'])
+                && $options['apiEndpoint'] != $defaultOptions['apiEndpoint']
+                && isset($options['defaultScopes'])) {
+            $options['credentialsConfig']['scopes'] = $options['defaultScopes'];
         }
 
         if (extension_loaded('sysvshm')
@@ -471,7 +480,9 @@ trait GapicClientTrait
                 break;
         }
 
-        return $callStack($call, $optionalArgs);
+        return $callStack($call, $optionalArgs + [
+            'audience' => self::$defaultAudience
+        ]);
     }
 
     /**
@@ -498,6 +509,7 @@ trait GapicClientTrait
             'timeoutMillis',
             'transportOptions',
             'metadataCallback',
+            'audience',
         ]);
 
         return $callStack;
